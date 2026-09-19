@@ -235,6 +235,3 @@ src/backtest/point_in_time.py
 tests/unit/test_backtest_stops.py
 tests/unit/test_feature_panel.py
 tests/unit/test_point_in_time.py
-.claude
-.github
-.vscode
