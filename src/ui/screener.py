@@ -10,6 +10,13 @@ import pandas as pd
 import streamlit as st
 
 from src.config import Settings
+from src.core.scoring import EntryQualityScorer
+from src.data.cache import SQLiteCache
+from src.data.universe import UniverseResult, load_sp500_universe
+from src.data.yahoo_client import YahooFinanceClient
+from src.screener.engine import FilterConfig, ScreenerEngine
+from src.ui.files import watchlist_tickers
+from src.ui.formatting import apply_formatters, dollars, integer, money, percent, score
 
 _SESSION_FALLBACK: dict[str, object] = {}
 _SESSION_LOCK = threading.Lock()
@@ -77,15 +84,6 @@ def _state_pop(key: str, default=None):
         return st.session_state.pop(key, default)
     except Exception:
         return fallback_value
-
-
-from src.core.scoring import EntryQualityScorer
-from src.data.cache import SQLiteCache
-from src.data.universe import UniverseResult, load_sp500_universe
-from src.data.yahoo_client import YahooFinanceClient
-from src.screener.engine import FilterConfig, ScreenerEngine
-from src.ui.files import watchlist_tickers
-from src.ui.formatting import apply_formatters, dollars, integer, money, percent, score
 
 
 def _sector_summary(results: pd.DataFrame) -> pd.DataFrame:
@@ -479,6 +477,11 @@ def _screen_worker(
     finally:
         _state_set('screen_running', False)
         _state_pop('screen_progress', None)
+        _state_pop('screen_worker', None)
+        try:
+            st.rerun()
+        except Exception:
+            pass
 
 
 def _empty_screen_frame() -> pd.DataFrame:

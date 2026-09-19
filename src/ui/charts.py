@@ -513,7 +513,7 @@ def _render_trade_legend(
     entry_value = None
     stop_value = None
     exit_value = None
-    for label, value, color in entries:
+    for label, value, _color in entries:
         if label == 'Entry':
             entry_value = float(value)
         elif label == 'Stop':
