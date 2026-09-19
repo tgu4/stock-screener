@@ -54,3 +54,12 @@ Core runtime dependencies are declared in `pyproject.toml`; dev tools are includ
 - Store cache and runtime state in the project’s configured cache directory rather than introducing global machine state.
 - This project is a research tool: preserve the “mechanical signals only” framing in user-facing outputs and documentation.
 - When editing code, follow the repo’s existing layout: `src/` for runtime code, `tests/` for unit/integration coverage, and `scripts/` for execution helpers.
+
+## AI agent guidance
+
+- Keep data fetches and technical calculations separated from decision logic.
+- Prefer deterministic, pure calculations and continuous `0-100` scoring over hard binary cutoffs.
+- Preserve the current pipeline: feature calculations → setup classification → trade-plan construction → ranking.
+- Keep indicator logic in `src/analysis` and `src/screener`; new scoring primitives belong in `src/core`.
+- Preserve type hints, docstrings, and testable behavior for new Python functions.
+- Favor small, explainable changes over broad rewrites.

@@ -21,7 +21,7 @@ them by quality adjusted for the market regime.
 <!-- SCREENER:START -->
 ![Regime](https://img.shields.io/badge/regime-Risk--On-informational) ![Watchlist](https://img.shields.io/badge/watchlist-17-blue) ![Adds](https://img.shields.io/badge/adds-1-success)
 
-_Last updated: 2026-09-19 16:19 UTC_
+_Last updated: 2026-09-19 21:01 UTC_
 
 > **Parameters:** Signal model ma_dc_volume_regime · Gates conf ≥ 80 & R/R ≥ 2.5 · Min avg volume 500,000
 

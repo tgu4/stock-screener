@@ -9,6 +9,7 @@ from plotly.subplots import make_subplots
 
 from src.analysis.indicators import atr, compute_indicators
 from src.config import Settings
+from src.core.scoring import EntryQualityScorer
 from src.data.universe import UniverseResult
 from src.data.yahoo_client import YahooFinanceClient
 from src.screener.engine import FilterConfig, ScreenerEngine
@@ -54,12 +55,70 @@ def render_chart_section(
         return
 
     plan_row = _plan_row(engine, ticker)
+    default_entry = (
+        float(plan_row.get('Entry')) if plan_row and plan_row.get('Entry') is not None else 0.0
+    )
+    default_stop = (
+        float(plan_row.get('Stop')) if plan_row and plan_row.get('Stop') is not None else 0.0
+    )
+    default_exit = (
+        float(plan_row.get('Target')) if plan_row and plan_row.get('Target') is not None else 0.0
+    )
+    entry_col, stop_col, exit_col, label_col = st.columns([1, 1, 1, 1.5])
+    custom_entry = entry_col.number_input(
+        'Entry',
+        min_value=0.0,
+        value=default_entry,
+        step=0.01,
+        format='%.2f',
+        help='Entry price to annotate on the chart for this ticker.',
+    )
+    custom_stop = stop_col.number_input(
+        'Stop',
+        min_value=0.0,
+        value=default_stop,
+        step=0.01,
+        format='%.2f',
+        help='Stop-loss price to annotate on the chart for this ticker.',
+    )
+    custom_exit = exit_col.number_input(
+        'Exit',
+        min_value=0.0,
+        value=default_exit,
+        step=0.01,
+        format='%.2f',
+        help='Exit/target price to annotate on the chart for this ticker.',
+    )
+    show_labels = label_col.checkbox('Show trade labels', value=True)
+
     fig, atr_pct = _build_chart(
-        client, settings, ticker=ticker, period=chart_period, rsi_period=rsi_period, plan=plan_row
+        client,
+        settings,
+        ticker=ticker,
+        period=chart_period,
+        rsi_period=rsi_period,
+        plan=plan_row,
+        custom_entry=custom_entry if show_labels and custom_entry > 0 else None,
+        custom_stop=custom_stop if show_labels and custom_stop > 0 else None,
+        custom_exit=custom_exit if show_labels and custom_exit > 0 else None,
     )
     if fig is None:
         st.warning(f'No chart data available for {ticker}.')
         return
+    current_price = None
+    if fig.data:
+        last_trace = fig.data[0]
+        if hasattr(last_trace, 'close') and hasattr(last_trace.close, '__len__'):
+            close_values = last_trace.close
+            if len(close_values):
+                current_price = float(close_values[-1])
+    _render_trade_legend(
+        plan_row,
+        current_price=current_price,
+        custom_entry=custom_entry,
+        custom_stop=custom_stop,
+        custom_exit=custom_exit,
+    )
     st.plotly_chart(fig, width='stretch')
     if plan_row:
         _render_chart_stats(plan_row, atr_pct)
@@ -100,6 +159,9 @@ def _build_chart(
     period: str,
     rsi_period: int,
     plan: dict | None = None,
+    custom_entry: float | None = None,
+    custom_stop: float | None = None,
+    custom_exit: float | None = None,
 ) -> tuple[go.Figure | None, float | None]:
     history_map = client.fetch_history([ticker], period=period, interval='1d')
     df = history_map.get(ticker, pd.DataFrame()).copy()
@@ -114,6 +176,7 @@ def _build_chart(
     if chart_df.empty:
         return None, None
 
+    current_price = float(chart_df['Close'].iloc[-1])
     short_w = settings.sma_short_window
     long_w = settings.sma_long_window
     ema_w = settings.ema_window
@@ -279,10 +342,26 @@ def _build_chart(
         height=820,
         showlegend=True,
         template='plotly_white',
-        margin=dict(l=20, r=20, t=50, b=20),
+        paper_bgcolor='white',
+        plot_bgcolor='white',
+        margin=dict(l=20, r=75, t=50, b=20),
         xaxis_rangeslider_visible=False,
+        font=dict(color='#0F172A', family='Arial'),
+        legend=dict(
+            orientation='h',
+            yanchor='bottom',
+            y=1.02,
+            xanchor='left',
+            x=0,
+            bgcolor='rgba(255,255,255,0.9)',
+            bordercolor='rgba(148,163,184,0.35)',
+            borderwidth=1,
+            font=dict(color='#0F172A', size=10),
+        ),
     )
     _overlay_plan(fig, plan)
+    _overlay_custom_trade_labels(fig, chart_df, custom_entry, custom_stop, custom_exit)
+    _overlay_current_price(fig, current_price)
 
     fig.update_yaxes(title_text='Price', row=1, col=1)
     fig.update_yaxes(title_text='Momentum', row=2, col=1)
@@ -309,11 +388,184 @@ def _overlay_plan(fig: go.Figure, plan: dict | None) -> None:
             line_dash=dash_style,
             line_color=color,
             line_width=1.2,
-            annotation_text=f'{label} {money(level)}',
-            annotation_position='right',
             row=1,
             col=1,
         )
+
+
+def _overlay_custom_trade_labels(
+    fig: go.Figure,
+    chart_df: pd.DataFrame,
+    custom_entry: float | None,
+    custom_stop: float | None,
+    custom_exit: float | None,
+) -> None:
+    """Draw user-entered trade levels without crowding the chart with annotations."""
+    if chart_df.empty:
+        return
+    for value, color, line_width in (
+        (custom_entry, '#2563EB', 2.2),
+        (custom_stop, '#DC2626', 2.4),
+        (custom_exit, '#16A34A', 2.0),
+    ):
+        if value is None or pd.isna(value):
+            continue
+        fig.add_hline(
+            y=float(value),
+            line_dash='solid',
+            line_color=color,
+            line_width=line_width,
+            row=1,
+            col=1,
+        )
+
+
+def _overlay_current_price(fig: go.Figure, current_price: float) -> None:
+    """Show the live price as a clean right-edge reference label."""
+    fig.add_hline(
+        y=current_price,
+        line_dash='solid',
+        line_color='#0F172A',
+        line_width=2.0,
+        row=1,
+        col=1,
+    )
+    fig.add_annotation(
+        x=1.02,
+        y=current_price,
+        xref='paper',
+        yref='y',
+        text=f'Current {money(current_price)}',
+        showarrow=False,
+        xanchor='left',
+        yanchor='middle',
+        font=dict(size=10, color='#0F172A', family='Arial', weight='bold'),
+        bgcolor='rgba(255,255,255,0.96)',
+        bordercolor='rgba(15,23,42,0.24)',
+        borderwidth=1,
+        borderpad=3,
+        align='left',
+    )
+
+
+def _mini_metric_html(label: str, value: str, color: str) -> str:
+    """Create a compact trading-dashboard metric tile with clean contrast."""
+    return (
+        f'<div style="display:inline-flex; align-items:center; justify-content:center; '
+        f'flex-direction:column; min-width:88px; padding:4px 7px; border-radius:6px; '
+        f'border:1px solid {color}; background:rgba(255,255,255,0.96); '
+        f'box-shadow: inset 0 0 0 1px rgba(148,163,184,0.12); '
+        f'color:{color}; font-family: Arial, sans-serif; '
+        f'font-size:9px; font-weight:700; letter-spacing:0.08em; line-height:1.2; '
+        f'text-transform:uppercase;">'
+        f'<span style="font-size:7.2px; color:#475569; letter-spacing:0.14em;">{label}</span>'
+        f'<span style="font-size:8.4px; color:#0F172A; letter-spacing:0.04em; margin-top:2px;">{value}</span>'
+        f'</div>'
+    )
+
+
+def _render_trade_legend(
+    plan_row: dict | None,
+    current_price: float | None,
+    custom_entry: float | None,
+    custom_stop: float | None,
+    custom_exit: float | None,
+) -> None:
+    """Display a compact color-coded legend above the chart instead of cluttered labels."""
+    entries = []
+    if current_price is not None:
+        entries.append(('Current', current_price, '#0F172A'))
+    for label, value, color in (
+        (
+            'Entry',
+            custom_entry
+            if custom_entry is not None and custom_entry > 0
+            else plan_row.get('Entry')
+            if plan_row
+            else None,
+            '#2563EB',
+        ),
+        (
+            'Stop',
+            custom_stop
+            if custom_stop is not None and custom_stop > 0
+            else plan_row.get('Stop')
+            if plan_row
+            else None,
+            '#DC2626',
+        ),
+        (
+            'Exit',
+            custom_exit
+            if custom_exit is not None and custom_exit > 0
+            else plan_row.get('Target')
+            if plan_row
+            else None,
+            '#16A34A',
+        ),
+    ):
+        if value is None or pd.isna(value):
+            continue
+        entries.append((label, float(value), color))
+    if not entries:
+        return
+
+    entry_value = None
+    stop_value = None
+    exit_value = None
+    for label, value, color in entries:
+        if label == 'Entry':
+            entry_value = float(value)
+        elif label == 'Stop':
+            stop_value = float(value)
+        elif label == 'Exit':
+            exit_value = float(value)
+
+    setup_html = ''
+    confidence_html = ''
+    if plan_row:
+        trend = float(plan_row.get('Trend Score', 0.0) or 0.0)
+        support = max(0.0, min(1.0, float((plan_row.get('Dist 200D %', 0.0) or 0.0) * 0.1 + 0.5)))
+        volume = max(0.0, min(1.0, float((plan_row.get('Rel Volume', 0.0) or 0.0) / 2.0)))
+        rs = max(0.0, min(1.0, float((plan_row.get('RS Outperformance', 0.0) or 0.0) * 1.25 + 0.5)))
+        risk_score = max(0.0, min(1.0, float((plan_row.get('R/R', 0.0) or 0.0) / 5.0)))
+        accumulation_distribution = max(
+            0.0,
+            min(1.0, float((plan_row.get('Rel Volume', 0.0) or 0.0) * 0.6 + (trend * 0.4))),
+        )
+        verdict = EntryQualityScorer().score(
+            trend_integrity=trend,
+            support_quality=support,
+            volume_absorption=volume,
+            accumulation_distribution=accumulation_distribution,
+            relative_strength=rs,
+            risk_quality=risk_score,
+        )
+        quality_map = {
+            'Strong dip': '#16A34A',
+            'Neutral dip': '#F59E0B',
+            'Weak dip': '#F97316',
+            'Distribution trap': '#DC2626',
+        }
+        quality_color = quality_map.get(verdict.verdict, '#94A3B8')
+        setup_html = _mini_metric_html('Setup', verdict.verdict, quality_color)
+        confidence = plan_row.get('Confidence')
+        if confidence is not None and not pd.isna(confidence):
+            confidence_html = _mini_metric_html('Conf', str(int(float(confidence))), '#60A5FA')
+
+    rr_html = ''
+    if entry_value is not None and stop_value is not None and exit_value is not None:
+        risk = abs(entry_value - stop_value)
+        reward = abs(exit_value - entry_value)
+        rr = reward / risk if risk else 0.0
+        rr_html = _mini_metric_html('R:R', f'{rr:.1f}:1', '#94A3B8')
+
+    html = '<div style="display:flex; flex-wrap:wrap; gap:5px; margin-bottom:8px; align-items:center;">'
+    html += setup_html + confidence_html + rr_html
+    for label, value, color in entries:
+        html += _mini_metric_html(label, money(value), color)
+    html += '</div>'
+    st.markdown(html, unsafe_allow_html=True)
 
 
 def _render_chart_stats(row: dict, atr_pct: float | None) -> None:
@@ -332,10 +584,19 @@ def _render_chart_stats(row: dict, atr_pct: float | None) -> None:
     )
     setup = row.get('Setup')
     st.markdown('**Setup & trade plan**')
+    current_price = price
+    to_entry = (
+        (float(price) - float(row.get('Entry'))) / float(price)
+        if price
+        and row.get('Entry') is not None
+        and not pd.isna(price)
+        and not pd.isna(row.get('Entry'))
+        else None
+    )
     r1 = st.columns(4)
     r1[0].metric('Setup', dash(str(setup)) if setup is not None else dash(''))
     r1[1].metric('Confidence', dash(integer(row.get('Confidence'))))
-    r1[2].metric('R/R', dash(score(row.get('R/R'))))
+    r1[2].metric('Current', dash(money(current_price)))
     r1[3].metric('Trend score', dash(score(row.get('Trend Score'))))
     r2 = st.columns(4)
     r2[0].metric('RS vs SPX', dash(percent(row.get('RS Outperformance'))))
@@ -343,7 +604,7 @@ def _render_chart_stats(row: dict, atr_pct: float | None) -> None:
     r2[2].metric('ATR %', dash(percent(atr_pct)))
     r2[3].metric('Market context', dash(str(row.get('Market Context') or '')))
     r3 = st.columns(4)
-    r3[0].metric('Entry', dash(money(row.get('Entry'))))
+    r3[0].metric('Entry', dash(money(row.get('Entry'))), dash(percent(to_entry)), delta_color='off')
     r3[1].metric('Stop', dash(money(row.get('Stop'))), dash(percent(to_stop)), delta_color='off')
     r3[2].metric(
         'Target', dash(money(row.get('Target'))), dash(percent(to_target)), delta_color='off'

@@ -59,6 +59,7 @@ ANALYSIS_COLUMNS: tuple[str, ...] = (
     'Revenue Growth',
     'Price',
     'Market Context',
+    'Filter Reasons',
     'Actionable',
 )
 
@@ -316,7 +317,9 @@ class ScreenerEngine:
             context,
             analysis.sector_strength,
         )
-        row['Actionable'] = self._passes_gates(analysis, config, regime_ok)
+        actionable, reasons = self._gate_check(analysis, config, regime_ok)
+        row['Filter Reasons'] = '; '.join(reasons)
+        row['Actionable'] = actionable
         return row
 
     def _compute_ticker(
@@ -352,23 +355,37 @@ class ScreenerEngine:
             sector_strength=sector_strength,
         )
 
+    def _gate_check(
+        self, analysis: _TickerAnalysis, config: FilterConfig, risk_on: bool = True
+    ) -> tuple[bool, list[str]]:
+        """Return whether an analysis clears the screen gates and why it failed."""
+        reasons: list[str] = []
+        if analysis.features.avg_volume < config.min_avg_volume:
+            reasons.append(
+                f'avg volume {analysis.features.avg_volume:,.0f} < {config.min_avg_volume:,.0f}'
+            )
+        if analysis.setup.setup_type == AVOID:
+            reasons.append(f'setup {analysis.setup.setup_type} is not actionable')
+        if regime_suppresses_entry(self.strategy.signal_model, risk_on, analysis.setup.setup_type):
+            reasons.append('market regime suppresses new adds')
+        if config.setups is not None and analysis.setup.setup_type not in config.setups:
+            reasons.append(f'unwanted setup {analysis.setup.setup_type}')
+        if analysis.plan.reward_risk is None:
+            reasons.append('reward:risk undefined')
+        elif analysis.plan.reward_risk < config.min_reward_risk:
+            reasons.append(
+                f'reward:risk {analysis.plan.reward_risk:.2f} < {config.min_reward_risk:.2f}'
+            )
+        if analysis.confidence < config.min_confidence:
+            reasons.append(f'confidence {analysis.confidence:.1f} < {config.min_confidence:.1f}')
+        return not reasons, reasons
+
     def _passes_gates(
         self, analysis: _TickerAnalysis, config: FilterConfig, risk_on: bool = True
     ) -> bool:
         """Return whether an analysis clears the screen's actionability gates."""
-        if analysis.features.avg_volume < config.min_avg_volume:
-            return False
-        if analysis.setup.setup_type == AVOID:
-            return False
-        if regime_suppresses_entry(self.strategy.signal_model, risk_on, analysis.setup.setup_type):
-            return False
-        if config.setups is not None and analysis.setup.setup_type not in config.setups:
-            return False
-        if analysis.plan.reward_risk is None or analysis.plan.reward_risk < config.min_reward_risk:
-            return False
-        if analysis.confidence < config.min_confidence:
-            return False
-        return True
+        actionable, _ = self._gate_check(analysis, config, risk_on)
+        return actionable
 
 
 def _result_row(
