@@ -39,9 +39,11 @@ def render_chart_section(
     free_text = col_free.text_input(
         'Any ticker', key='chart_free_text', help='Overrides the dropdown.'
     )
-    picked = col_pick.selectbox(
-        'Or pick from your lists', options=options, key='chart_pick'
-    ) if options else None
+    picked = (
+        col_pick.selectbox('Or pick from your lists', options=options, key='chart_pick')
+        if options
+        else None
+    )
     chart_period = col_period.selectbox(
         'Period', CHART_PERIODS, index=CHART_PERIODS.index('1y'), key='chart_period'
     )
@@ -126,15 +128,19 @@ def _build_chart(
     chart_df['SMA_SHORT'] = indicators[f'SMA{short_w}']
     chart_df['SMA_LONG'] = indicators[f'SMA{long_w}']
     chart_df['RSI'] = indicators['RSI']
+    chart_df['CCI'] = indicators.get('CCI', pd.Series(0.0, index=chart_df.index))
+    chart_df['MACD'] = indicators.get('MACD', pd.Series(0.0, index=chart_df.index))
+    chart_df['MACD_SIGNAL'] = indicators.get('MACD_SIGNAL', pd.Series(0.0, index=chart_df.index))
+    chart_df['MACD_HIST'] = indicators.get('MACD_HIST', pd.Series(0.0, index=chart_df.index))
     chart_df['VOL_AVG'] = indicators['VOL_AVG']
 
     fig = make_subplots(
-        rows=3,
+        rows=4,
         cols=1,
         shared_xaxes=True,
         vertical_spacing=0.04,
-        row_heights=[0.58, 0.22, 0.20],
-        subplot_titles=(f'{ticker} Price', 'RSI', 'Volume'),
+        row_heights=[0.52, 0.16, 0.16, 0.16],
+        subplot_titles=(f'{ticker} Price', 'Momentum', 'Volume', 'Indicators'),
     )
 
     fig.add_trace(
@@ -152,37 +158,120 @@ def _build_chart(
         col=1,
     )
     fig.add_trace(
-        go.Scatter(x=chart_df.index, y=chart_df['EMA'], mode='lines', name=f'EMA {ema_w}', line=dict(color='#0284C7', width=1.5)),
+        go.Scatter(
+            x=chart_df.index,
+            y=chart_df['EMA'],
+            mode='lines',
+            name=f'EMA {ema_w}',
+            line=dict(color='#0284C7', width=1.5),
+        ),
         row=1,
         col=1,
     )
     fig.add_trace(
-        go.Scatter(x=chart_df.index, y=chart_df['SMA_SHORT'], mode='lines', name=f'SMA {short_w}', line=dict(color='#16A34A', width=1.5)),
+        go.Scatter(
+            x=chart_df.index,
+            y=chart_df['SMA_SHORT'],
+            mode='lines',
+            name=f'SMA {short_w}',
+            line=dict(color='#16A34A', width=1.5),
+        ),
         row=1,
         col=1,
     )
     fig.add_trace(
-        go.Scatter(x=chart_df.index, y=chart_df['SMA_LONG'], mode='lines', name=f'SMA {long_w}', line=dict(color='#B45309', width=1.5)),
+        go.Scatter(
+            x=chart_df.index,
+            y=chart_df['SMA_LONG'],
+            mode='lines',
+            name=f'SMA {long_w}',
+            line=dict(color='#B45309', width=1.5),
+        ),
         row=1,
         col=1,
     )
 
     fig.add_trace(
-        go.Scatter(x=chart_df.index, y=chart_df['RSI'], mode='lines', name='RSI', line=dict(color='#7C2D12', width=1.5)),
+        go.Scatter(
+            x=chart_df.index,
+            y=chart_df['RSI'],
+            mode='lines',
+            name='RSI',
+            line=dict(color='#7C2D12', width=1.5),
+        ),
+        row=2,
+        col=1,
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=chart_df.index,
+            y=chart_df['CCI'],
+            mode='lines',
+            name='CCI',
+            line=dict(color='#7C3AED', width=1.5),
+        ),
         row=2,
         col=1,
     )
     fig.add_hline(y=70, line_dash='dash', line_color='#DC2626', row=2, col=1)
     fig.add_hline(y=30, line_dash='dash', line_color='#059669', row=2, col=1)
+    fig.add_hline(y=100, line_dash='dot', line_color='#8B5CF6', row=2, col=1)
+    fig.add_hline(y=-100, line_dash='dot', line_color='#8B5CF6', row=2, col=1)
 
     fig.add_trace(
-        go.Bar(x=chart_df.index, y=chart_df['Volume'], name='Volume', marker_color='#64748B', opacity=0.55),
+        go.Bar(
+            x=chart_df.index,
+            y=chart_df['Volume'],
+            name='Volume',
+            marker_color='#64748B',
+            opacity=0.55,
+        ),
         row=3,
         col=1,
     )
     fig.add_trace(
-        go.Scatter(x=chart_df.index, y=chart_df['VOL_AVG'], mode='lines', name='Vol Avg 20', line=dict(color='#334155', width=1.5)),
+        go.Scatter(
+            x=chart_df.index,
+            y=chart_df['VOL_AVG'],
+            mode='lines',
+            name='Vol Avg 20',
+            line=dict(color='#334155', width=1.5),
+        ),
         row=3,
+        col=1,
+    )
+
+    fig.add_trace(
+        go.Scatter(
+            x=chart_df.index,
+            y=chart_df['MACD'],
+            mode='lines',
+            name='MACD',
+            line=dict(color='#0EA5E9', width=1.5),
+        ),
+        row=4,
+        col=1,
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=chart_df.index,
+            y=chart_df['MACD_SIGNAL'],
+            mode='lines',
+            name='MACD Signal',
+            line=dict(color='#F59E0B', width=1.5),
+        ),
+        row=4,
+        col=1,
+    )
+    fig.add_trace(
+        go.Bar(
+            x=chart_df.index,
+            y=chart_df['MACD_HIST'],
+            name='MACD Hist',
+            marker_color='#10B981',
+            opacity=0.65,
+        ),
+        row=4,
         col=1,
     )
 
@@ -196,8 +285,9 @@ def _build_chart(
     _overlay_plan(fig, plan)
 
     fig.update_yaxes(title_text='Price', row=1, col=1)
-    fig.update_yaxes(title_text='RSI', row=2, col=1, range=[0, 100])
+    fig.update_yaxes(title_text='Momentum', row=2, col=1)
     fig.update_yaxes(title_text='Volume', row=3, col=1)
+    fig.update_yaxes(title_text='MACD', row=4, col=1)
 
     atr_series = atr(chart_df['High'], chart_df['Low'], chart_df['Close'])
     last_close = float(chart_df['Close'].iloc[-1])
