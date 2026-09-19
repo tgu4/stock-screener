@@ -4,15 +4,6 @@ Read natively by the GitHub Copilot cloud agent, Cursor, Codex, and any
 other AGENTS.md-aware agent or tool. This file is a project-specific quick
 reference — replace the placeholders below with real facts about this repo.
 
-Canonical behavior guidance lives elsewhere; don't duplicate it here:
-
-- User-level laws and working style: `~/.claude/CLAUDE.md` (installed by
-  `aikit setup`, applies to Claude Code across all projects)
-- Copilot-specific instructions: `.github/copilot-instructions.md`
-
-`aikit init`/`aikit update` create this file only if it's missing and never
-overwrite content once you've filled in the sections below — edit freely.
-
 ## Project
 
 This repository is a Python-based stock screener for the S&P 500. It uses free Yahoo Finance data and a Streamlit UI to identify actionable setup candidates, rank them by quality, and generate structured trade plans with entry/stop/target levels.
